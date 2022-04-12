@@ -10,12 +10,11 @@ import { useGlobSetting } from '/@/hooks/setting';
 import { useMessage } from '/@/hooks/web/useMessage';
 import { RequestEnum, ResultEnum, ContentTypeEnum } from '/@/enums/httpEnum';
 import { isString } from '/@/utils/is';
-import { getToken } from '/@/utils/auth';
+import { getToken, getRToken, setAuthCache } from '/@/utils/auth';
 import { setObjToUrlParams, deepMerge } from '/@/utils';
 import { useErrorLogStoreWithOut } from '/@/store/modules/errorLog';
 import { useI18n } from '/@/hooks/web/useI18n';
 import { joinTimestamp, formatRequestDate } from './helper';
-import { useUserStoreWithOut } from '/@/store/modules/user';
 
 const globSetting = useGlobSetting();
 const urlPrefix = globSetting.urlPrefix;
@@ -24,6 +23,9 @@ const { createMessage, createErrorModal } = useMessage();
 /**
  * @description: 数据处理，方便区分多种处理方式
  */
+
+let isRefreshing = false; // 标记是否正在刷新 token
+let requests = <any>[]; // 存储待重发请求的数组
 const transform: AxiosTransform = {
   /**
    * @description: 处理请求数据。如果数据不是预期格式，可直接抛出错误
@@ -32,11 +34,13 @@ const transform: AxiosTransform = {
     const { t } = useI18n();
     const { isTransformResponse, isReturnNativeResponse } = options;
     // 是否返回原生响应头 比如：需要获取响应头时使用该属性
+
     if (isReturnNativeResponse) {
       return res;
     }
     // 不进行任何处理，直接返回
     // 用于页面代码可能需要直接获取code，data，message这些信息时开启
+    console.log(isTransformResponse);
     if (!isTransformResponse) {
       return res.data;
     }
@@ -62,9 +66,7 @@ const transform: AxiosTransform = {
     switch (code) {
       case ResultEnum.TIMEOUT:
         timeoutMsg = t('sys.api.timeoutMessage');
-        const userStore = useUserStoreWithOut();
-        userStore.setToken(undefined);
-        userStore.logout(true);
+
         break;
       default:
         if (message) {
@@ -166,7 +168,6 @@ const transform: AxiosTransform = {
     const msg: string = response?.data?.error?.message ?? '';
     const err: string = error?.toString?.() ?? '';
     let errMessage = '';
-
     try {
       if (code === 'ECONNABORTED' && message.indexOf('timeout') !== -1) {
         errMessage = t('sys.api.apiTimeoutMessage');
@@ -182,6 +183,49 @@ const transform: AxiosTransform = {
           createMessage.error(errMessage);
         }
         return Promise.reject(error);
+      }
+
+      if (
+        response.status === 401 &&
+        !error.config.url.includes('/refresh') &&
+        !error.config.url.includes('/login')
+      ) {
+        const { config } = error;
+        const instance = defHttp.getAxios();
+        if (!isRefreshing) {
+          isRefreshing = true;
+          console.log('refresh');
+
+          return defHttp
+            .post({ url: '/refresh', params: { refresh_token: getRToken() } })
+            .then((res) => {
+              const { access_token, refresh_token } = res;
+              setAuthCache('TOKEN__', access_token);
+              setAuthCache('RTOKEN__', refresh_token);
+              config.headers.Authorization = access_token;
+
+              requests.forEach((cb) => cb(access_token));
+              console.log(requests);
+              requests = []; // 重新请求完清空
+              return instance(config);
+            })
+            .catch((err) => {
+              console.log('抱歉，您的登录状态已失效，请重新登录！');
+              return Promise.reject(err);
+            })
+            .finally(() => {
+              isRefreshing = false;
+            });
+        } else {
+          // 返回未执行 resolve 的 Promise
+          return new Promise((resolve) => {
+            // 用函数形式将 resolve 存入，等待刷新后再执行
+            requests.push((token) => {
+              config.headers.Authorization = `${token}`;
+              resolve(instance(config));
+            });
+          });
+        }
       }
     } catch (error) {
       throw new Error(error as unknown as string);
@@ -228,7 +272,7 @@ function createAxios(opt?: Partial<CreateAxiosOptions>) {
           // 接口拼接地址
           urlPrefix: urlPrefix,
           //  是否加入时间戳
-          joinTime: true,
+          joinTime: false,
           // 忽略重复请求
           ignoreCancelToken: true,
           // 是否携带token
@@ -242,9 +286,10 @@ function createAxios(opt?: Partial<CreateAxiosOptions>) {
 export const defHttp = createAxios();
 
 // other api url
-// export const otherHttp = createAxios({
-//   requestOptions: {
-//     apiUrl: 'xxx',
-//     urlPrefix: 'xxx',
-//   },
-// });
+export const amapHttp = createAxios({
+  requestOptions: {
+    apiUrl: '/amap',
+    withToken: false,
+    isTransformResponse: false,
+  },
+});

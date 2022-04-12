@@ -4,10 +4,10 @@ import { defineStore } from 'pinia';
 import { store } from '/@/store';
 import { RoleEnum } from '/@/enums/roleEnum';
 import { PageEnum } from '/@/enums/pageEnum';
-import { ROLES_KEY, TOKEN_KEY, USER_INFO_KEY } from '/@/enums/cacheEnum';
+import { ROLES_KEY, TOKEN_KEY, USER_INFO_KEY, RTOKEN_KEY } from '/@/enums/cacheEnum';
 import { getAuthCache, setAuthCache } from '/@/utils/auth';
 import { GetUserInfoModel, LoginParams } from '/@/api/sys/model/userModel';
-import { doLogout, getUserInfo, loginApi } from '/@/api/sys/user';
+import { doLogout, getUserInfo, loginApi, doRefresh, loginByMobileCaptcha } from '/@/api/sys/user';
 import { useI18n } from '/@/hooks/web/useI18n';
 import { useMessage } from '/@/hooks/web/useMessage';
 import { router } from '/@/router';
@@ -20,6 +20,7 @@ import { h } from 'vue';
 interface UserState {
   userInfo: Nullable<UserInfo>;
   token?: string;
+  refreshToken?: string;
   roleList: RoleEnum[];
   sessionTimeout?: boolean;
   lastUpdateTime: number;
@@ -32,6 +33,7 @@ export const useUserStore = defineStore({
     userInfo: null,
     // token
     token: undefined,
+    refreshToken: undefined,
     // roleList
     roleList: [],
     // Whether the login expired
@@ -46,6 +48,9 @@ export const useUserStore = defineStore({
     getToken(): string {
       return this.token || getAuthCache<string>(TOKEN_KEY);
     },
+    getRToken(): string {
+      return this.refreshToken || getAuthCache<string>(RTOKEN_KEY);
+    },
     getRoleList(): RoleEnum[] {
       return this.roleList.length > 0 ? this.roleList : getAuthCache<RoleEnum[]>(ROLES_KEY);
     },
@@ -57,9 +62,13 @@ export const useUserStore = defineStore({
     },
   },
   actions: {
-    setToken(info: string | undefined) {
-      this.token = info ? info : ''; // for null or undefined value
-      setAuthCache(TOKEN_KEY, info);
+    setToken(token: string | undefined) {
+      this.token = token ? token : ''; // for null or undefined value
+      setAuthCache(TOKEN_KEY, token);
+    },
+    setRToken(token: string | undefined) {
+      this.refreshToken = token ? token : ''; // for null or undefined value
+      setAuthCache(RTOKEN_KEY, token);
     },
     setRoleList(roleList: RoleEnum[]) {
       this.roleList = roleList;
@@ -91,12 +100,29 @@ export const useUserStore = defineStore({
       try {
         const { goHome = true, mode, ...loginParams } = params;
         const data = await loginApi(loginParams, mode);
-        const { token } = data;
-
+        const { tokens } = data;
         // save token
-        this.setToken(token);
+        this.setToken(tokens.access_token);
+        this.setRToken(tokens.refresh_token);
         return this.afterLoginAction(goHome);
       } catch (error) {
+        console.log(error);
+        return Promise.reject(error);
+      }
+    },
+    async loginByMobile(mobile: string, captcha: string) {
+      try {
+        const res = await loginByMobileCaptcha(mobile, captcha);
+        if (res.code !== 200) {
+          return Promise.reject(res.msg);
+        }
+        const { tokens } = res;
+        // save token
+        this.setToken(tokens.access_token);
+        this.setRToken(tokens.refresh_token);
+        return this.afterLoginAction(true);
+      } catch (error) {
+        console.log(error);
         return Promise.reject(error);
       }
     },
@@ -104,7 +130,7 @@ export const useUserStore = defineStore({
       if (!this.getToken) return null;
       // get user info
       const userInfo = await this.getUserInfoAction();
-
+      console.log(userInfo);
       const sessionTimeout = this.sessionTimeout;
       if (sessionTimeout) {
         this.setSessionTimeout(false);
@@ -124,17 +150,21 @@ export const useUserStore = defineStore({
     },
     async getUserInfoAction(): Promise<UserInfo | null> {
       if (!this.getToken) return null;
-      const userInfo = await getUserInfo();
-      const { roles = [] } = userInfo;
-      if (isArray(roles)) {
-        const roleList = roles.map((item) => item.value) as RoleEnum[];
-        this.setRoleList(roleList);
-      } else {
-        userInfo.roles = [];
-        this.setRoleList([]);
+      const data = await getUserInfo();
+      if (data.code == 200) {
+        this.setUserInfo(data.data);
+
+        return data.data;
       }
-      this.setUserInfo(userInfo);
-      return userInfo;
+      // const { roles = [] } = userInfo;
+      // if (isArray(roles)) {
+      //   const roleList = roles.map((item) => item.value) as RoleEnum[];
+      //   this.setRoleList(roleList);
+      // } else {
+      //   userInfo.roles = [];
+      //   this.setRoleList([]);
+      // }
+      return null;
     },
     /**
      * @description: logout
@@ -148,11 +178,20 @@ export const useUserStore = defineStore({
         }
       }
       this.setToken(undefined);
+      this.setRToken(undefined);
       this.setSessionTimeout(false);
       this.setUserInfo(null);
       goLogin && router.push(PageEnum.BASE_LOGIN);
     },
-
+    async refresh() {
+      try {
+        const data = await doRefresh(this.getRToken);
+        this.setToken(data.access_token);
+        this.setRToken(data.refresh_token);
+      } catch {
+        await this.logout(true);
+      }
+    },
     /**
      * @description: Confirm before logging out
      */

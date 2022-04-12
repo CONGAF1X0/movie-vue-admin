@@ -63,6 +63,7 @@ export class VAxios {
   /**
    * @description: Interceptor configuration
    */
+
   private setupInterceptors() {
     const transform = this.getTransform();
     if (!transform) {
@@ -199,7 +200,8 @@ export class VAxios {
 
     const opt: RequestOptions = Object.assign({}, requestOptions, options);
 
-    const { beforeRequestHook, requestCatchHook, transformRequestHook } = transform || {};
+    const { beforeRequestHook, requestCatchHook, transformRequestHook, responseInterceptorsCatch } =
+      transform || {};
     if (beforeRequestHook && isFunction(beforeRequestHook)) {
       conf = beforeRequestHook(conf, opt);
     }
@@ -211,16 +213,17 @@ export class VAxios {
       this.axiosInstance
         .request<any, AxiosResponse<Result>>(conf)
         .then((res: AxiosResponse<Result>) => {
-          if (transformRequestHook && isFunction(transformRequestHook)) {
-            try {
-              const ret = transformRequestHook(res, opt);
-              resolve(ret);
-            } catch (err) {
-              reject(err || new Error('request error!'));
-            }
-            return;
-          }
-          resolve(res as unknown as Promise<T>);
+          // if (transformRequestHook && isFunction(transformRequestHook)) {
+          //   try {
+          //     console.log(opt);
+          //     const ret = transformRequestHook(res, opt);
+          //     resolve(ret);
+          //   } catch (err) {
+          //     reject(err || new Error('request error!'));
+          //   }
+          //   return;
+          // }
+          resolve(res.data as unknown as Promise<T>);
         })
         .catch((e: Error | AxiosError) => {
           if (requestCatchHook && isFunction(requestCatchHook)) {

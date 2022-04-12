@@ -21,10 +21,13 @@ import { registerGlobComp } from '/@/components/registerGlobComp';
 if (import.meta.env.DEV) {
   import('ant-design-vue/dist/antd.less');
 }
+import moment from 'moment';
+import 'moment/dist/locale/zh-cn';
+moment.locale('zh-cn');
 
 async function bootstrap() {
   const app = createApp(App);
-
+  app.config.globalProperties.$moment = moment;
   // Configure store
   setupStore(app);
 

@@ -2,6 +2,7 @@ import type { ValidationRule } from 'ant-design-vue/lib/form/Form';
 import type { RuleObject } from 'ant-design-vue/lib/form/interface';
 import { ref, computed, unref, Ref } from 'vue';
 import { useI18n } from '/@/hooks/web/useI18n';
+import { isAccountExist } from '/@/api/sys/user';
 
 export enum LoginStateEnum {
   LOGIN,
@@ -41,9 +42,11 @@ export function useFormValid<T extends Object = any>(formRef: Ref<any>) {
 export function useFormRules(formData?: Recordable) {
   const { t } = useI18n();
 
-  const getAccountFormRule = computed(() => createRule(t('sys.login.accountPlaceholder')));
-  const getPasswordFormRule = computed(() => createRule(t('sys.login.passwordPlaceholder')));
-  const getSmsFormRule = computed(() => createRule(t('sys.login.smsPlaceholder')));
+  const getAccountFormRule = computed(() => createACRule(t('sys.login.accountPlaceholder'), 5, 24));
+  const getPasswordFormRule = computed(() =>
+    createPWRule(t('sys.login.passwordPlaceholder'), 6, 24),
+  );
+  const getSmsFormRule = computed(() => createSMSRule(t('sys.login.smsPlaceholder')));
   const getMobileFormRule = computed(() => createRule(t('sys.login.mobilePlaceholder')));
 
   const validatePolicy = async (_: RuleObject, value: boolean) => {
@@ -62,6 +65,17 @@ export function useFormRules(formData?: Recordable) {
     };
   };
 
+  const validateAccount = () => {
+    return async (_: RuleObject, value: string) => {
+      if (value.length > 4 && value.length < 25) {
+        const res = await isAccountExist(value);
+        if (res.code === 1008) {
+          return Promise.reject('账号已注册');
+        }
+      }
+    };
+  };
+
   const getFormRules = computed((): { [k: string]: ValidationRule | ValidationRule[] } => {
     const accountFormRule = unref(getAccountFormRule);
     const passwordFormRule = unref(getPasswordFormRule);
@@ -76,7 +90,13 @@ export function useFormRules(formData?: Recordable) {
       // register form rules
       case LoginStateEnum.REGISTER:
         return {
-          account: accountFormRule,
+          account: [
+            { required: true, min: 5, max: 24 },
+            {
+              validator: validateAccount(),
+              trigger: 'blur',
+            },
+          ],
           password: passwordFormRule,
           confirmPassword: [
             { validator: validateConfirmPassword(formData?.password), trigger: 'change' },
@@ -115,4 +135,81 @@ function createRule(message: string) {
       trigger: 'change',
     },
   ];
+}
+function createPWRule(message: string, min: number, max: number) {
+  return [
+    {
+      required: true,
+      message,
+      trigger: 'change',
+      min: min,
+      max: max,
+    },
+  ];
+}
+function createSURule(message: string, min: number, max: number) {
+  return [
+    {
+      required: true,
+      message,
+      trigger: 'change',
+      min: min,
+      max: max,
+    },
+    {
+      validator(_, value) {
+        return new Promise<void>((resolve, reject) => {
+          if (value.length > 4) {
+            isAccountExist(value)
+              .then((res) => {
+                if (res.code === 1008) {
+                  reject('账号已注册');
+                }
+                resolve();
+              })
+              .catch((err) => {
+                reject(err.message || '账号已注册');
+              });
+          }
+        });
+      },
+    },
+  ];
+}
+function createACRule(message: string, min: number, max: number) {
+  return [
+    {
+      required: true,
+      message,
+      trigger: 'change',
+      min: min,
+      max: max,
+    },
+  ];
+}
+function createSMSRule(message: string) {
+  return [
+    {
+      required: true,
+      message,
+      trigger: 'change',
+      len: 6,
+    },
+  ];
+}
+export function checkMobile(mobile) {
+  const reg = /^[1][3,4,5,7,8][0-9]{9}$/;
+  if (!reg.test(mobile)) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+export function existChinese(str: string) {
+  if (/.*[\u4e00-\u9fa5]+.*$/.test(str)) {
+    return true;
+  } else {
+    return false;
+  }
 }

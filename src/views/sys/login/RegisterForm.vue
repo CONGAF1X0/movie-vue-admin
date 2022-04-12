@@ -23,6 +23,7 @@
           size="large"
           class="fix-auto-fill"
           v-model:value="formData.sms"
+          :sendCodeApi="getCode"
           :placeholder="t('sys.login.smsCode')"
         />
       </FormItem>
@@ -72,7 +73,18 @@
   import { StrengthMeter } from '/@/components/StrengthMeter';
   import { CountdownInput } from '/@/components/CountDown';
   import { useI18n } from '/@/hooks/web/useI18n';
-  import { useLoginState, useFormRules, useFormValid, LoginStateEnum } from './useLogin';
+  import {
+    useLoginState,
+    useFormRules,
+    useFormValid,
+    LoginStateEnum,
+    checkMobile,
+    existChinese,
+  } from './useLogin';
+  import { useMessage } from '/@/hooks/web/useMessage';
+  import { getMobileCaptcha, signup } from '/@/api/sys/user';
+
+  const { createMessage } = useMessage();
 
   const FormItem = Form.Item;
   const InputPassword = Input.Password;
@@ -99,6 +111,47 @@
   async function handleRegister() {
     const data = await validForm();
     if (!data) return;
+    if (existChinese(data.password + data.account)) {
+      createMessage.error('请输入正确的账号密码');
+      return;
+    }
+    try {
+      loading.value = true;
+      const res = await signup({
+        username: data.account,
+        password: data.password,
+        mobile: data.mobile,
+        captcha: data.sms,
+      });
+      if (res.code !== 200) {
+        createMessage.error(res.msg);
+        return;
+      }
+      createMessage.success('注册成功');
+      handleBackLogin();
+    } catch (error) {
+      createMessage.error('注册失败');
+    } finally {
+      loading.value = false;
+    }
     console.log(data);
+    // handleBackLogin();
   }
+
+  const getCode = async () => {
+    if (!checkMobile(formData.mobile)) {
+      createMessage.error('请输入正确的手机号');
+      return false;
+    }
+    const res = await getMobileCaptcha(formData.mobile, 'signup');
+    if (res.code === 1008) {
+      createMessage.error('手机号已注册');
+      return false;
+    } else if (res.code !== 200) {
+      createMessage.error('发送验证码失败');
+      return false;
+    }
+    createMessage.success('验证码已发送');
+    return true;
+  };
 </script>

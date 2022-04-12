@@ -98,7 +98,13 @@
   import { useMessage } from '/@/hooks/web/useMessage';
 
   import { useUserStore } from '/@/store/modules/user';
-  import { LoginStateEnum, useLoginState, useFormRules, useFormValid } from './useLogin';
+  import {
+    LoginStateEnum,
+    useLoginState,
+    useFormRules,
+    useFormValid,
+    existChinese,
+  } from './useLogin';
   import { useDesign } from '/@/hooks/web/useDesign';
   //import { onKeyStroke } from '@vueuse/core';
 
@@ -107,7 +113,7 @@
   const FormItem = Form.Item;
   const InputPassword = Input.Password;
   const { t } = useI18n();
-  const { notification, createErrorModal } = useMessage();
+  const { notification, createErrorModal, createMessage } = useMessage();
   const { prefixCls } = useDesign('login');
   const userStore = useUserStore();
 
@@ -119,7 +125,7 @@
   const rememberMe = ref(false);
 
   const formData = reactive({
-    account: 'vben',
+    account: 'admin',
     password: '123456',
   });
 
@@ -132,17 +138,23 @@
   async function handleLogin() {
     const data = await validForm();
     if (!data) return;
+    if (existChinese(data.password + data.account)) {
+      createMessage.error('请输入正确的账号密码');
+      return;
+    }
     try {
       loading.value = true;
       const userInfo = await userStore.login({
         password: data.password,
         username: data.account,
+        type: 2,
         mode: 'none', //不要默认的错误提示
       });
+      console.log(userInfo);
       if (userInfo) {
         notification.success({
           message: t('sys.login.loginSuccessTitle'),
-          description: `${t('sys.login.loginSuccessDesc')}: ${userInfo.realName}`,
+          description: `${t('sys.login.loginSuccessDesc')}: ${userInfo.user_name}`,
           duration: 3,
         });
       }

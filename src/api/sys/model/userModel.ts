@@ -4,8 +4,14 @@
 export interface LoginParams {
   username: string;
   password: string;
+  type: number;
 }
-
+export interface SignupParams {
+  username: string;
+  mobile: string;
+  password: string;
+  captcha: string;
+}
 export interface RoleInfo {
   roleName: string;
   value: string;
@@ -15,24 +21,22 @@ export interface RoleInfo {
  * @description: Login interface return value
  */
 export interface LoginResultModel {
-  userId: string | number;
-  token: string;
-  role: RoleInfo;
+  uid: string | number;
+  tokens: any;
 }
 
 /**
  * @description: Get user information return value
  */
 export interface GetUserInfoModel {
-  roles: RoleInfo[];
-  // 用户id
-  userId: string | number;
-  // 用户名
-  username: string;
-  // 真实名字
-  realName: string;
-  // 头像
+  uid: string | number;
+  role: number;
+  user_name: string;
+  nick_name?: string;
+  gender?: number;
+  birthday: number;
+  mobile: number;
+  email: string;
   avatar: string;
-  // 介绍
-  desc?: string;
+  cinema_id: string | number;
 }
